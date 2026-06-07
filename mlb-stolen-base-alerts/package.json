@@ -1,0 +1,19 @@
+{
+  "name": "mlb-stolen-base-alerts",
+  "version": "1.0.0",
+  "description": "Pregame MLB stolen base Discord alerts for Railway/GitHub",
+  "main": "src/index.js",
+  "type": "module",
+  "scripts": {
+    "start": "node src/index.js",
+    "run:once": "RUN_ONCE=true node src/index.js",
+    "test:score": "node src/index.js --test-score"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.7",
+    "node-cron": "^3.0.3"
+  }
+}

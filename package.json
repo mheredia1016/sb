@@ -1,0 +1,19 @@
+{
+  "name": "mlb-stolen-base-alerts",
+  "version": "1.0.0",
+  "description": "Daily MLB stolen base pregame Discord alerts using free MLB Stats API data with optional odds placeholders.",
+  "main": "src/index.js",
+  "scripts": {
+    "start": "node src/index.js",
+    "run:sb": "node src/index.js --once",
+    "test": "node src/index.js --dry-run --once"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "dependencies": {
+    "axios": "^1.7.9",
+    "dotenv": "^16.4.7",
+    "node-cron": "^3.0.3"
+  }
+}
