@@ -2,12 +2,12 @@
 
 Railway/GitHub-ready Discord bot for pregame stolen-base targets.
 
-## Important fix in this version
+## Fix in this version
 
-Discord messages can get cut off when they are too long. This version automatically splits the stolen-base report into multiple Discord messages:
+This version fixes two separate limits:
 
-- `MAX_DISCORD_CHARS=1750`
-- `POST_DELAY_MS=900`
+1. Discord length limit: long reports are split into multiple Discord messages.
+2. Player count limit: `TOP_SB_PLAYS=ALL` posts every player that clears `MIN_SB_SCORE`.
 
 ## Railway variables
 
@@ -17,9 +17,23 @@ SB_ALERT_HOUR=8
 TIMEZONE=America/Chicago
 MIN_SB_SCORE=70
 ELITE_SB_SCORE=90
-TOP_SB_PLAYS=15
+TOP_SB_PLAYS=ALL
 MAX_DISCORD_CHARS=1750
 POST_DELAY_MS=900
+```
+
+### Important
+
+If you only want the top 10/15/etc., set:
+
+```env
+TOP_SB_PLAYS=15
+```
+
+If you want every qualified stolen-base target, set:
+
+```env
+TOP_SB_PLAYS=ALL
 ```
 
 ## Commands

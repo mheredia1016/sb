@@ -31,10 +31,23 @@ export function scorePlayer(player) {
   };
 }
 
-export function rankPlayers(players, minScore = 70, limit = 15) {
-  return players
+function parseLimit(limitValue) {
+  const raw = String(limitValue ?? 'ALL').trim().toUpperCase();
+
+  // Use ALL/0/blank to post every qualified player.
+  if (!raw || raw === 'ALL' || raw === 'NONE' || raw === '0') return null;
+
+  const parsed = Number(raw);
+  if (!Number.isFinite(parsed) || parsed <= 0) return null;
+  return parsed;
+}
+
+export function rankPlayers(players, minScore = 70, limit = 'ALL') {
+  const ranked = players
     .map(scorePlayer)
     .filter((p) => p.score >= Number(minScore))
-    .sort((a, b) => b.score - a.score)
-    .slice(0, Number(limit));
+    .sort((a, b) => b.score - a.score);
+
+  const parsedLimit = parseLimit(limit);
+  return parsedLimit ? ranked.slice(0, parsedLimit) : ranked;
 }

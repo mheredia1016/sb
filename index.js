@@ -10,8 +10,11 @@ async function runStolenBaseAlert() {
   const ranked = rankPlayers(
     candidates,
     process.env.MIN_SB_SCORE || 70,
-    process.env.TOP_SB_PLAYS || 15
+    process.env.TOP_SB_PLAYS || 'ALL'
   );
+
+  console.log(`SB candidates loaded: ${candidates.length}`);
+  console.log(`SB qualified after score filter: ${ranked.length}`);
 
   const report = buildReport(ranked, process.env.ELITE_SB_SCORE || 90);
 
