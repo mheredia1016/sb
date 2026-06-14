@@ -1,57 +1,42 @@
-const axios = require('axios');
+import { sleep } from './utils.js';
 
-function formatGameTime(iso) {
-  try {
-    return new Intl.DateTimeFormat('en-US', {
-      timeZone: 'America/Chicago',
-      hour: 'numeric',
-      minute: '2-digit',
-      month: 'short',
-      day: 'numeric'
-    }).format(new Date(iso));
-  } catch {
-    return iso || 'TBD';
+export function splitDiscordText(text, maxChars = 1750) {
+  const safeMax = Math.min(Number(maxChars) || 1750, 1900);
+  const blocks = String(text || '').split('\n\n');
+  const chunks = [];
+  let current = '';
+
+  for (const block of blocks) {
+    const next = current ? `${current}\n\n${block}` : block;
+    if (next.length <= safeMax) {
+      current = next;
+      continue;
+    }
+    if (current) chunks.push(current);
+    if (block.length <= safeMax) current = block;
+    else {
+      for (let i = 0; i < block.length; i += safeMax) chunks.push(block.slice(i, i + safeMax));
+      current = '';
+    }
   }
+  if (current) chunks.push(current);
+  return chunks;
 }
 
-function buildMessage(candidates, config, date) {
-  if (!candidates.length) {
-    return {
-      content: `🦶 **MLB Stolen Base Targets — ${date}**\n\nNo stolen base plays cleared the minimum score of **${config.minScore}** today.`
-    };
+export async function postDiscordReport({ webhookUrl, title, text, maxChars, delayMs }) {
+  if (!webhookUrl) throw new Error('Missing SB_WEBHOOK_URL');
+  const chunks = splitDiscordText(text, maxChars);
+  const total = chunks.length || 1;
+
+  for (let i = 0; i < chunks.length; i++) {
+    const partTitle = total > 1 ? `${title} (${i + 1}/${total})` : title;
+    const res = await fetch(webhookUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ content: `**${partTitle}**\n${chunks[i]}` })
+    });
+    if (!res.ok) throw new Error(`Discord post failed: ${res.status} ${await res.text().catch(() => '')}`);
+    if (i < chunks.length - 1) await sleep(Number(delayMs) || 900);
   }
-
-  const lines = [];
-  lines.push(`🦶 **MLB Stolen Base Targets — ${date}**`);
-  lines.push('');
-  lines.push(`Minimum Score: **${config.minScore}** | Elite: **${config.eliteScore}+**`);
-  lines.push('');
-
-  candidates.forEach((c, index) => {
-    const medal = index === 0 ? '🥇' : index === 1 ? '🥈' : index === 2 ? '🥉' : '➡️';
-    const tier = c.score >= config.eliteScore ? 'ELITE SPOT' : c.score >= config.minScore + 8 ? 'STRONG LOOK' : 'WATCH LIST';
-    lines.push(`${medal} **${c.playerName}** — ${c.teamName} vs ${c.opponentName}`);
-    lines.push(`Score: **${c.score}** | ${tier}`);
-    lines.push(`Game: ${formatGameTime(c.gameTime)}`);
-    lines.push(`Why: ${c.reasons.slice(0, 4).join(' • ')}`);
-    lines.push(`Odds: _Add anytime SB odds provider later_`);
-    lines.push('');
-  });
-
-  lines.push('_Free-data model. Best used as a shortlist before checking posted SB odds._');
-  return { content: lines.join('\n').slice(0, 1900) };
+  return { chunks: total };
 }
-
-async function postToDiscord(webhookUrl, payload, dryRun = false) {
-  if (dryRun) {
-    console.log('--- DRY RUN DISCORD PAYLOAD ---');
-    console.log(payload.content);
-    return;
-  }
-  if (!webhookUrl) {
-    throw new Error('Missing SB_WEBHOOK_URL');
-  }
-  await axios.post(webhookUrl, payload, { timeout: 20000 });
-}
-
-module.exports = { buildMessage, postToDiscord };

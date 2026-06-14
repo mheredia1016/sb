@@ -1,15 +1,18 @@
 {
-  "name": "mlb-stolen-base-alerts",
-  "version": "1.1.0",
-  "description": "Pregame MLB stolen base Discord alerts with chunked Discord posts.",
-  "main": "index.js",
+  "name": "mlb-stolen-base-alerts-v2",
+  "version": "2.0.0",
+  "description": "Daily MLB stolen base pregame alerts for Discord/Railway.",
   "type": "module",
+  "main": "src/index.js",
   "scripts": {
-    "start": "node index.js",
-    "test-alert": "node index.js --test"
+    "start": "node src/index.js",
+    "test": "node src/index.js --test",
+    "debug": "DEBUG_SB=true node src/index.js --test"
   },
+  "engines": { "node": ">=18" },
   "dependencies": {
-    "dotenv": "latest",
-    "node-cron": "latest"
+    "discord.js": "^14.15.3",
+    "dotenv": "^16.4.5",
+    "node-cron": "^3.0.3"
   }
 }

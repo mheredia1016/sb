@@ -1,107 +1,115 @@
-const cron = require('node-cron');
-const config = require('./config');
-const {
-  todayCentralDate,
-  getSchedule,
-  getTeamRoster,
-  getPlayerSeasonStats,
-  getPlayerGameLog
-} = require('./mlbApi');
-const { scoreCandidate } = require('./scoring');
-const { buildMessage, postToDiscord } = require('./discord');
+import 'dotenv/config';
+import cron from 'node-cron';
+import { Client, GatewayIntentBits } from 'discord.js';
+import { getStolenBaseCandidates } from './data.js';
+import { rankPlayers } from './scoring.js';
+import { buildDebugReport, buildReport } from './report.js';
+import { postDiscordReport } from './discord.js';
 
-function sleep(ms) {
-  return new Promise(resolve => setTimeout(resolve, ms));
+async function generateStolenBaseReport({ minScore, limit, eliteScore, debug = false } = {}) {
+  const candidates = await getStolenBaseCandidates();
+  const ranked = rankPlayers(
+    candidates,
+    minScore ?? process.env.MIN_SB_SCORE ?? 55,
+    limit ?? process.env.TOP_SB_PLAYS ?? 'ALL'
+  );
+
+  console.log(`SB candidates loaded: ${candidates.length}`);
+  console.log(`SB qualified after score filter: ${ranked.length}`);
+
+  const text = debug
+    ? buildDebugReport({ candidates, ranked })
+    : buildReport(ranked, eliteScore ?? process.env.ELITE_SB_SCORE ?? 80, { minScore: minScore ?? process.env.MIN_SB_SCORE ?? 55 });
+
+  return { candidates, ranked, text };
 }
 
-function isPositionPlayer(rosterItem) {
-  const type = rosterItem.position?.type || '';
-  const code = rosterItem.position?.code || '';
-  return type !== 'Pitcher' && code !== '1';
+async function runStolenBaseAlert(options = {}) {
+  const { ranked, text } = await generateStolenBaseReport(options);
+
+  const result = await postDiscordReport({
+    webhookUrl: process.env.SB_WEBHOOK_URL,
+    title: options.title || 'MLB Stolen Base Pregame Report',
+    text,
+    maxChars: process.env.MAX_DISCORD_CHARS || 1750,
+    delayMs: process.env.POST_DELAY_MS || 900
+  });
+
+  console.log(`Posted ${ranked.length} stolen-base play(s) in ${result.chunks} Discord message(s).`);
+  return { ranked, chunks: result.chunks };
 }
 
-async function scoreRosterForGame(game, teamSide) {
-  const team = teamSide === 'away' ? game.teams.away.team : game.teams.home.team;
-  const roster = await getTeamRoster(team.id);
-  const candidates = [];
+function startCommandBot() {
+  if (!process.env.DISCORD_BOT_TOKEN) {
+    console.log('DISCORD_BOT_TOKEN not set. Manual Discord commands disabled.');
+    return;
+  }
 
-  for (const player of roster.filter(isPositionPlayer)) {
+  const client = new Client({
+    intents: [
+      GatewayIntentBits.Guilds,
+      GatewayIntentBits.GuildMessages,
+      GatewayIntentBits.MessageContent
+    ]
+  });
+
+  client.once('ready', () => {
+    console.log(`Discord command bot logged in as ${client.user.tag}`);
+  });
+
+  client.on('messageCreate', async (message) => {
+    if (message.author.bot) return;
+
+    const content = message.content.trim().toLowerCase();
+    if (!content.startsWith('!sb')) return;
+
+    console.log(`Command seen: ${content} from ${message.author.tag}`);
+
     try {
-      const stats = await getPlayerSeasonStats(player.person.id);
-      if (!stats) continue;
-
-      const sb = Number(stats.stolenBases || 0);
-      const cs = Number(stats.caughtStealing || 0);
-      if (sb + cs === 0) continue;
-
-      const recentGames = await getPlayerGameLog(player.person.id);
-      const scored = scoreCandidate({ player, stats, recentGames, game, teamSide });
-      candidates.push(scored);
-
-      // Be gentle with free API.
-      await sleep(120);
+      if (content === '!sb') {
+        await message.reply('🦶 Generating full stolen base report...');
+        const result = await runStolenBaseAlert({ title: 'Manual MLB Stolen Base Report' });
+        await message.channel.send(`✅ Posted ${result.ranked.length} stolen-base play(s).`);
+      } else if (content === '!sbtop') {
+        await message.reply('🦶 Generating top 10 stolen base report...');
+        const result = await runStolenBaseAlert({ limit: 10, title: 'Top 10 MLB Stolen Base Report' });
+        await message.channel.send(`✅ Posted top ${result.ranked.length}.`);
+      } else if (content === '!sbelite') {
+        await message.reply('🦶 Generating elite stolen base report...');
+        const result = await runStolenBaseAlert({ minScore: process.env.ELITE_SB_SCORE || 80, title: 'Elite MLB Stolen Base Report' });
+        await message.channel.send(`✅ Posted ${result.ranked.length} elite stolen-base play(s).`);
+      } else if (content === '!sbdebug') {
+        await message.reply('🔎 Generating SB debug report...');
+        const result = await runStolenBaseAlert({ debug: true, title: 'SB Debug Report' });
+        await message.channel.send(`✅ Debug posted. Qualified: ${result.ranked.length}.`);
+      }
     } catch (err) {
-      console.warn(`Skipping ${player.person.fullName}: ${err.message}`);
+      console.error(err);
+      await message.channel.send(`❌ SB command failed: ${err.message}`);
     }
-  }
+  });
 
-  return candidates;
+  client.login(process.env.DISCORD_BOT_TOKEN).catch((err) => {
+    console.error('Discord login failed:', err.message);
+  });
 }
 
-async function runStolenBaseReport() {
-  const date = todayCentralDate();
-  console.log(`[SB] Building report for ${date}`);
+const isTest = process.argv.includes('--test');
+const isDebug = process.argv.includes('--debug') || process.env.DEBUG_SB === 'true';
 
-  const games = await getSchedule(date);
-  if (!games.length) {
-    const payload = { content: `🦶 **MLB Stolen Base Targets — ${date}**\n\nNo MLB games found today.` };
-    await postToDiscord(config.webhookUrl, payload, config.dryRun);
-    return;
-  }
+if (isTest) {
+  runStolenBaseAlert({ debug: isDebug }).catch((err) => {
+    console.error(err);
+    process.exit(1);
+  });
+} else {
+  startCommandBot();
 
-  let allCandidates = [];
-  for (const game of games) {
-    const status = game.status?.abstractGameState || '';
-    if (status === 'Final') continue;
+  const hour = Number(process.env.SB_ALERT_HOUR || 8);
+  const timezone = process.env.TIMEZONE || 'America/Chicago';
+  console.log(`SB alert scheduler active: ${hour}:00 ${timezone}`);
 
-    console.log(`[SB] Scoring ${game.teams.away.team.name} @ ${game.teams.home.team.name}`);
-    const away = await scoreRosterForGame(game, 'away');
-    const home = await scoreRosterForGame(game, 'home');
-    allCandidates = allCandidates.concat(away, home);
-  }
-
-  const filtered = allCandidates
-    .filter(c => c.score >= config.minScore)
-    .sort((a, b) => b.score - a.score)
-    .slice(0, config.topPlays);
-
-  if (!filtered.length && !config.postWhenNoPlays) {
-    console.log('[SB] No plays cleared threshold; not posting.');
-    return;
-  }
-
-  const payload = buildMessage(filtered, config, date);
-  await postToDiscord(config.webhookUrl, payload, config.dryRun);
-  console.log(`[SB] Posted ${filtered.length} plays.`);
+  cron.schedule(`0 ${hour} * * *`, () => {
+    runStolenBaseAlert().catch(console.error);
+  }, { timezone });
 }
-
-async function main() {
-  if (config.once) {
-    await runStolenBaseReport();
-    return;
-  }
-
-  const cronExpression = `${config.alertMinute} ${config.alertHour} * * *`;
-  console.log(`[SB] Scheduler started: ${cronExpression} ${config.timezone}`);
-
-  cron.schedule(cronExpression, () => {
-    runStolenBaseReport().catch(err => {
-      console.error('[SB] Report failed:', err);
-    });
-  }, { timezone: config.timezone });
-}
-
-main().catch(err => {
-  console.error('[SB] Fatal error:', err);
-  process.exit(1);
-});
