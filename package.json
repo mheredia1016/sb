@@ -3,11 +3,11 @@
   "version": "2.0.0",
   "description": "Daily MLB stolen base pregame alerts for Discord/Railway.",
   "type": "module",
-  "main": "src/index.js",
+  "main": "index.js",
   "scripts": {
-    "start": "node src/index.js",
-    "test": "node src/index.js --test",
-    "debug": "DEBUG_SB=true node src/index.js --test"
+    "start": "node index.js",
+    "test": "node index.js --test",
+    "debug": "DEBUG_SB=true node index.js --test"
   },
   "engines": { "node": ">=18" },
   "dependencies": {
