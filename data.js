@@ -1,5 +1,3 @@
-import fetch from 'node-fetch';
-
 const API_BASE =
   process.env.HR_API_BASE ||
   'https://hr-api-production-fed2.up.railway.app';
