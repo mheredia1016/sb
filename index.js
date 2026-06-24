@@ -7,9 +7,10 @@ import { postDiscordReport } from './discord.js';
 
 async function runStolenBaseAlert() {
   const candidates = await getStolenBaseCandidates();
+
   const ranked = rankPlayers(
     candidates,
-    process.env.MIN_SB_SCORE || 70,
+    process.env.MIN_SB_SCORE || 25,
     process.env.TOP_SB_PLAYS || 'ALL'
   );
 
@@ -41,6 +42,11 @@ if (isTest) {
   const timezone = process.env.TIMEZONE || 'America/Chicago';
 
   console.log(`SB alert scheduler active: ${hour}:00 ${timezone}`);
+
+  if (process.env.RUN_SB_ON_START === 'true') {
+    console.log('RUN_SB_ON_START enabled. Posting SB report now...');
+    runStolenBaseAlert().catch(console.error);
+  }
 
   cron.schedule(`0 ${hour} * * *`, () => {
     runStolenBaseAlert().catch(console.error);
