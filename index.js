@@ -14,50 +14,56 @@ function todayChicagoDate() {
   }).format(new Date());
 }
 
+function cleanRecapUrl(url) {
+  if (!url) return '';
+  return url.endsWith('/') ? url.slice(0, -1) : url;
+}
+
 async function sendPicksToRecapBot(players, date) {
   if (!process.env.RECAP_BOT_URL || !process.env.RECAP_BOT_SECRET) {
     console.log('[RECAP] Missing RECAP_BOT_URL or RECAP_BOT_SECRET');
     return;
   }
 
+  const recapUrl = cleanRecapUrl(process.env.RECAP_BOT_URL);
+
   const payload = {
     type: 'sb',
     date,
-    players: players.map((p) => ({
-      playerId: p.playerId || p.id || p.mlbId,
-      name: p.name || p.playerName,
-      team: p.team || p.teamAbbr,
-      opponent: p.opponent || p.opponentAbbr,
-      gamePk: p.gamePk || p.gameId,
-      score: p.score,
-      tier: p.tier || null
-    }))
+    players: players
+      .map((p) => ({
+        playerId: p.playerId || p.id || p.mlbId,
+        name: p.name || p.playerName,
+        team: p.team || p.teamAbbr,
+        opponent: p.opponent || p.opponentAbbr,
+        gamePk: p.gamePk || p.gameId,
+        score: p.score,
+        tier: p.tier || null
+      }))
+      .filter((p) => p.playerId && p.name && p.gamePk)
   };
 
+  if (!payload.players.length) {
+    console.log('[RECAP] No valid SB picks found to send.');
+    return;
+  }
+
   try {
-    const response = await fetch(
-      `${process.env.RECAP_BOT_URL.replace(/\\/$/, '')}/save-picks`,
-      {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'x-recap-secret': process.env.RECAP_BOT_SECRET
-        },
-        body: JSON.stringify(payload)
-      }
-    );
+    const response = await fetch(`${recapUrl}/save-picks`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-recap-secret': process.env.RECAP_BOT_SECRET
+      },
+      body: JSON.stringify(payload)
+    });
 
     if (!response.ok) {
-      console.error(
-        '[RECAP] Failed:',
-        response.status,
-        await response.text()
-      );
-    } else {
-      console.log(
-        `[RECAP] Sent ${payload.players.length} SB picks to recap bot`
-      );
+      console.error(`[RECAP] ${response.status} ${await response.text()}`);
+      return;
     }
+
+    console.log(`[RECAP] Saved ${payload.players.length} SB picks`);
   } catch (err) {
     console.error('[RECAP]', err);
   }
@@ -75,10 +81,7 @@ async function runStolenBaseAlert() {
   console.log(`SB candidates loaded: ${candidates.length}`);
   console.log(`SB qualified after score filter: ${ranked.length}`);
 
-  const report = buildReport(
-    ranked,
-    process.env.ELITE_SB_SCORE || 90
-  );
+  const report = buildReport(ranked, process.env.ELITE_SB_SCORE || 90);
 
   const result = await postDiscordReport({
     webhookUrl: process.env.SB_WEBHOOK_URL,
@@ -88,14 +91,9 @@ async function runStolenBaseAlert() {
     delayMs: process.env.POST_DELAY_MS || 900
   });
 
-  console.log(
-    `Posted stolen-base report in ${result.chunks} Discord message(s).`
-  );
+  console.log(`Posted stolen-base report in ${result.chunks} Discord message(s).`);
 
-  await sendPicksToRecapBot(
-    ranked,
-    todayChicagoDate()
-  );
+  await sendPicksToRecapBot(ranked, todayChicagoDate());
 }
 
 const isTest = process.argv.includes('--test');
@@ -116,11 +114,7 @@ if (isTest) {
     runStolenBaseAlert().catch(console.error);
   }
 
-  cron.schedule(
-    `0 ${hour} * * *`,
-    () => {
-      runStolenBaseAlert().catch(console.error);
-    },
-    { timezone }
-  );
+  cron.schedule(`0 ${hour} * * *`, () => {
+    runStolenBaseAlert().catch(console.error);
+  }, { timezone });
 }
