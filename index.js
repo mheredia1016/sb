@@ -5,6 +5,64 @@ import { rankPlayers } from './scoring.js';
 import { buildReport } from './report.js';
 import { postDiscordReport } from './discord.js';
 
+function todayChicagoDate() {
+  return new Intl.DateTimeFormat('en-CA', {
+    timeZone: process.env.TIMEZONE || 'America/Chicago',
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit'
+  }).format(new Date());
+}
+
+async function sendPicksToRecapBot(players, date) {
+  if (!process.env.RECAP_BOT_URL || !process.env.RECAP_BOT_SECRET) {
+    console.log('[RECAP] Missing RECAP_BOT_URL or RECAP_BOT_SECRET');
+    return;
+  }
+
+  const payload = {
+    type: 'sb',
+    date,
+    players: players.map((p) => ({
+      playerId: p.playerId || p.id || p.mlbId,
+      name: p.name || p.playerName,
+      team: p.team || p.teamAbbr,
+      opponent: p.opponent || p.opponentAbbr,
+      gamePk: p.gamePk || p.gameId,
+      score: p.score,
+      tier: p.tier || null
+    }))
+  };
+
+  try {
+    const response = await fetch(
+      `${process.env.RECAP_BOT_URL.replace(/\\/$/, '')}/save-picks`,
+      {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'x-recap-secret': process.env.RECAP_BOT_SECRET
+        },
+        body: JSON.stringify(payload)
+      }
+    );
+
+    if (!response.ok) {
+      console.error(
+        '[RECAP] Failed:',
+        response.status,
+        await response.text()
+      );
+    } else {
+      console.log(
+        `[RECAP] Sent ${payload.players.length} SB picks to recap bot`
+      );
+    }
+  } catch (err) {
+    console.error('[RECAP]', err);
+  }
+}
+
 async function runStolenBaseAlert() {
   const candidates = await getStolenBaseCandidates();
 
@@ -17,7 +75,10 @@ async function runStolenBaseAlert() {
   console.log(`SB candidates loaded: ${candidates.length}`);
   console.log(`SB qualified after score filter: ${ranked.length}`);
 
-  const report = buildReport(ranked, process.env.ELITE_SB_SCORE || 90);
+  const report = buildReport(
+    ranked,
+    process.env.ELITE_SB_SCORE || 90
+  );
 
   const result = await postDiscordReport({
     webhookUrl: process.env.SB_WEBHOOK_URL,
@@ -27,7 +88,14 @@ async function runStolenBaseAlert() {
     delayMs: process.env.POST_DELAY_MS || 900
   });
 
-  console.log(`Posted stolen-base report in ${result.chunks} Discord message(s).`);
+  console.log(
+    `Posted stolen-base report in ${result.chunks} Discord message(s).`
+  );
+
+  await sendPicksToRecapBot(
+    ranked,
+    todayChicagoDate()
+  );
 }
 
 const isTest = process.argv.includes('--test');
@@ -48,7 +116,11 @@ if (isTest) {
     runStolenBaseAlert().catch(console.error);
   }
 
-  cron.schedule(`0 ${hour} * * *`, () => {
-    runStolenBaseAlert().catch(console.error);
-  }, { timezone });
+  cron.schedule(
+    `0 ${hour} * * *`,
+    () => {
+      runStolenBaseAlert().catch(console.error);
+    },
+    { timezone }
+  );
 }
