@@ -22,12 +22,29 @@ function calculateFallbackScore(hitter) {
 
   return Math.round(
     20 +
-    sb * 2.2 +
-    xwOBA * 55 +
-    hh * 0.25 -
-    swStr * 0.8 +
-    lineupBonus
+      sb * 2.2 +
+      xwOBA * 55 +
+      hh * 0.25 -
+      swStr * 0.8 +
+      lineupBonus
   );
+}
+
+function getPlayerId(hitter) {
+  return (
+    hitter.playerId ||
+    hitter.id ||
+    hitter.mlbId ||
+    hitter.mlbID ||
+    hitter.personId ||
+    hitter.personID ||
+    hitter.player_id ||
+    null
+  );
+}
+
+function getTeamAbbr(team) {
+  return team?.abbreviation || team?.name || '';
 }
 
 export async function getStolenBaseCandidates() {
@@ -50,18 +67,29 @@ export async function getStolenBaseCandidates() {
       const gameData = await res.json();
       const hitters = gameData.hitters || [];
 
+      const awayTeam = getTeamAbbr(game.away);
+      const homeTeam = getTeamAbbr(game.home);
+
       for (const hitter of hitters) {
         const score = Number(hitter.kSB) || calculateFallbackScore(hitter);
 
         if (score < Number(process.env.MIN_SB_SCORE || 25)) continue;
 
+        const team = hitter.team || '';
+        const opponent =
+          String(team).toUpperCase() === String(awayTeam).toUpperCase()
+            ? homeTeam
+            : awayTeam;
+
         candidates.push({
           gamePk,
+          playerId: getPlayerId(hitter),
           name: hitter.name,
-          team: hitter.team,
+          team,
+          opponent,
 
-          awayTeam: game.away?.abbreviation || game.away?.name,
-          homeTeam: game.home?.abbreviation || game.home?.name,
+          awayTeam,
+          homeTeam,
           gameTime: game.gameDate,
 
           lineupSpot: hitter.lineupSpot || 99,
